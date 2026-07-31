@@ -45,7 +45,7 @@ app.use('/api/reports', reportRoutes);
 
 
 // Rota de teste
-app.get('/', (req, res) => {
+app.get('/api', (req, res) => {
   res.json({ message: 'AutoFlow API is running!' });
 });
 
