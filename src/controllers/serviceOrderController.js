@@ -5,7 +5,12 @@ const Client = require('../models/Client');
 const Equipment = require('../models/Equipment');
 const User = require('../models/User');
 const ServiceOrderHistory = require('../models/ServiceOrderHistory');
-const { buildServiceOrderAccessFilter, canManageServiceOrder, getAllowedStatusTransitions } = require('../services/serviceOrderAccess');
+const { buildServiceOrderAccessFilter, canManageServiceOrder, getAllowedStatusTransitions, getAllowedPaymentMethods } = require('../services/serviceOrderAccess');
+
+const validatePaymentMethod = (paymentMethod) => {
+  const allowed = getAllowedPaymentMethods();
+  return !paymentMethod || allowed.includes(paymentMethod);
+};
 const { resolveClientForUser } = require('../services/clientContext');
 
 //==================================================//
@@ -268,7 +273,7 @@ const updateServiceOrder = async (req, res) => {
     if (status && req.user?.role === 'tecnico') {
       const allowedStatuses = getAllowedStatusTransitions(req.user.role);
       if (!allowedStatuses.includes(status)) {
-        return res.status(400).json({ message: 'Status não permitido para o perfil técnico.' });
+        return res.status(400).json({ message: 'Técnicos só podem atualizar até "SERVICO_FINALIZADO". A conclusão e a entrega ficam com o departamento administrativo.' });
       }
     }
 
@@ -386,8 +391,8 @@ const completeServiceOrder = async (req, res) => {
       });
     }
 
-    if (!canManageServiceOrder(req.user || {}, serviceOrder)) {
-      return res.status(403).json({ message: 'Acesso negado: você não pode concluir esta ordem de serviço.' });
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ message: 'Apenas o departamento administrativo pode concluir a ordem de serviço.' });
     }
 
     const completionDate = new Date();
@@ -395,18 +400,19 @@ const completeServiceOrder = async (req, res) => {
     await serviceOrder.update({
       status: 'CONCLUIDA',
       completionDate,
+      paymentStatus: 'PENDENTE',
     });
 
     await ServiceOrderHistory.create({
       serviceOrderId: serviceOrder.id,
       eventType: 'ORDEM_CONCLUIDA',
       description: 'Ordem de Serviço concluída',
-      details: `A ordem foi marcada como concluída em ${completionDate.toISOString()}.`,
+      details: `A ordem foi marcada como concluída em ${completionDate.toISOString()}. Aguardando seleção da forma de pagamento pelo cliente.`,
       createdBy: 'sistema',
     });
 
     return res.status(200).json({
-      message: 'Ordem de Serviço concluída com sucesso.',
+      message: 'Ordem de Serviço concluída com sucesso. Agora o cliente deve escolher a forma de pagamento.',
       serviceOrder,
     });
 
@@ -424,6 +430,97 @@ const completeServiceOrder = async (req, res) => {
 //            Entregando Ordem de Serviço          //
 //==================================================//
 
+const registerPaymentMethod = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { paymentMethod } = req.body;
+
+    const serviceOrder = await ServiceOrder.findByPk(id);
+
+    if (!serviceOrder) {
+      return res.status(404).json({ message: 'Ordem de Serviço não encontrada.' });
+    }
+
+    if (req.user?.role !== 'cliente') {
+      return res.status(403).json({ message: 'Apenas o cliente pode informar a forma de pagamento.' });
+    }
+
+    if (Number(serviceOrder.clientId) !== Number(req.user.clientId)) {
+      return res.status(403).json({ message: 'Você não pode alterar a forma de pagamento desta ordem.' });
+    }
+
+    if (!paymentMethod || !getAllowedPaymentMethods().includes(paymentMethod)) {
+      return res.status(400).json({
+        message: `Forma de pagamento inválida. Opções aceitas: ${getAllowedPaymentMethods().join(', ')}`,
+      });
+    }
+
+    await serviceOrder.update({
+      paymentMethod,
+      paymentStatus: 'PENDENTE',
+    });
+
+    await ServiceOrderHistory.create({
+      serviceOrderId: serviceOrder.id,
+      eventType: 'FORMA_DE_PAGAMENTO_SELECIONADA',
+      description: 'Forma de pagamento selecionada pelo cliente',
+      details: `Forma de pagamento informada: ${paymentMethod}. Aguardando confirmação do pagamento pelo administrativo.`,
+      createdBy: req.user.id,
+    });
+
+    return res.status(200).json({
+      message: 'Forma de pagamento registrada com sucesso. Aguardando confirmação do administrativo.',
+      serviceOrder,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Erro interno do servidor.',
+      error: error.message,
+    });
+  }
+};
+
+const confirmPaymentReceived = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const serviceOrder = await ServiceOrder.findByPk(id);
+
+    if (!serviceOrder) {
+      return res.status(404).json({ message: 'Ordem de Serviço não encontrada.' });
+    }
+
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ message: 'Apenas o departamento administrativo pode confirmar o pagamento.' });
+    }
+
+    if (!serviceOrder.paymentMethod) {
+      return res.status(400).json({ message: 'O cliente ainda não informou a forma de pagamento.' });
+    }
+
+    await serviceOrder.update({
+      paymentStatus: 'CONFIRMADO',
+    });
+
+    await ServiceOrderHistory.create({
+      serviceOrderId: serviceOrder.id,
+      eventType: 'PAGAMENTO_CONFIRMADO',
+      description: 'Pagamento confirmado',
+      details: `O pagamento foi confirmado com ${serviceOrder.paymentMethod}. Aguardando a retirada do veículo pelo cliente.`,
+      createdBy: req.user.id,
+    });
+
+    return res.status(200).json({
+      message: 'Pagamento confirmado. Aguardando a retirada do veículo pelo cliente.',
+      serviceOrder,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Erro interno do servidor.',
+      error: error.message,
+    });
+  }
+};
+
 const deliverServiceOrder = async (req, res) => {
   try {
 
@@ -437,8 +534,12 @@ const deliverServiceOrder = async (req, res) => {
       });
     }
 
-    if (!canManageServiceOrder(req.user || {}, serviceOrder)) {
-      return res.status(403).json({ message: 'Acesso negado: você não pode entregar esta ordem de serviço.' });
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ message: 'Apenas o departamento administrativo pode entregar a ordem de serviço.' });
+    }
+
+    if (serviceOrder.paymentStatus !== 'CONFIRMADO') {
+      return res.status(400).json({ message: 'A entrega só pode ser realizada após a confirmação do pagamento.' });
     }
 
     const deliveryDate = new Date();
@@ -452,7 +553,7 @@ const deliverServiceOrder = async (req, res) => {
       serviceOrderId: serviceOrder.id,
       eventType: 'ORDEM_ENTREGUE',
       description: 'Ordem de Serviço entregue',
-      details: `A ordem foi marcada como entregue em ${deliveryDate.toISOString()}.`,
+      details: `A ordem foi marcada como entregue em ${deliveryDate.toISOString()} com pagamento ${serviceOrder.paymentMethod}.`,
       createdBy: 'sistema',
     });
 
@@ -478,5 +579,7 @@ module.exports = {
   updateServiceOrder,
   deleteServiceOrder,
   completeServiceOrder,
+  registerPaymentMethod,
+  confirmPaymentReceived,
   deliverServiceOrder,
 };

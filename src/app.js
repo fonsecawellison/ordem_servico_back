@@ -15,6 +15,7 @@ const stockMovementRoutes = require('./routes/stockMovementRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const financeRoutes = require('./routes/financeRoutes');
 const reportRoutes = require('./routes/reportRoutes');
+const paymentConfigRoutes = require('./routes/paymentConfigRoutes');
 const ServiceOrderPart = require('./models/ServiceOrderPart');
 
 
@@ -42,6 +43,7 @@ app.use('/api/stock-movements', stockMovementRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/payment-configs', paymentConfigRoutes);
 
 
 // Rota de teste

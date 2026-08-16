@@ -9,6 +9,8 @@ const {
   updateServiceOrder,
   deleteServiceOrder,
   completeServiceOrder,
+  registerPaymentMethod,
+  confirmPaymentReceived,
   deliverServiceOrder,
 } = require('../controllers/serviceOrderController');
 
@@ -103,6 +105,16 @@ router.patch('/:id/complete', completeServiceOrder);
 //==================================================//
 //          Entregando Ordem de Serviço             //
 //==================================================//
+
+router.patch('/:id/payment', [
+  body('paymentMethod')
+    .notEmpty()
+    .withMessage('A forma de pagamento é obrigatória.')
+    .isIn(['DINHEIRO', 'PIX', 'CARTAO', 'CREDITO', 'DEBITO', 'BOLETO'])
+    .withMessage('Forma de pagamento inválida.'),
+], registerPaymentMethod);
+
+router.patch('/:id/payment-confirmed', confirmPaymentReceived);
 
 router.patch('/:id/deliver', deliverServiceOrder);
 

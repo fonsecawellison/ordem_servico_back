@@ -20,7 +20,7 @@ const buildServiceOrderAccessFilter = (user = {}) => {
 
 const getAllowedStatusTransitions = (role) => {
   if (role === 'tecnico') {
-    return ['INICIADA', 'TROCA_DE_PNEU', 'TROCA_DE_OLEO', 'SERVICO_FINALIZADO', 'CONCLUIDA', 'ENTREGUE'];
+    return ['INICIADA', 'TROCA_DE_PNEU', 'TROCA_DE_OLEO', 'SERVICO_FINALIZADO'];
   }
 
   return ['ABERTA', 'INICIADA', 'TROCA_DE_PNEU', 'TROCA_DE_OLEO', 'SERVICO_FINALIZADO', 'CONCLUIDA', 'ENTREGUE'];
@@ -37,6 +37,10 @@ const canManageServiceOrder = (user = {}, order = {}) => {
 
   if (user.role === 'tecnico') {
     return Number(order.technicianId) === Number(user.id);
+  }
+
+  if (user.role === 'cliente') {
+    return Number(order.clientId) === Number(user.clientId);
   }
 
   return false;

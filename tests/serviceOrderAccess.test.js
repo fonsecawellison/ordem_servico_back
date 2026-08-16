@@ -24,16 +24,26 @@ test('cliente sem vínculo não consegue visualizar ordens', () => {
   assert.deepStrictEqual(buildServiceOrderAccessFilter({ role: 'cliente', id: 40 }), { clientId: -1 });
 });
 
-test('técnico pode avançar nos status do fluxo operacional', () => {
-  assert.deepStrictEqual(getAllowedStatusTransitions('tecnico'), ['INICIADA', 'TROCA_DE_PNEU', 'TROCA_DE_OLEO', 'SERVICO_FINALIZADO', 'CONCLUIDA', 'ENTREGUE']);
+test('técnico só avança até serviço finalizado, enquanto admin cuida de concluir e entregar', () => {
+  assert.deepStrictEqual(getAllowedStatusTransitions('tecnico'), ['INICIADA', 'TROCA_DE_PNEU', 'TROCA_DE_OLEO', 'SERVICO_FINALIZADO']);
+  assert.deepStrictEqual(getAllowedStatusTransitions('admin'), ['ABERTA', 'INICIADA', 'TROCA_DE_PNEU', 'TROCA_DE_OLEO', 'SERVICO_FINALIZADO', 'CONCLUIDA', 'ENTREGUE']);
 });
 
-test('admin gerencia qualquer ordem enquanto técnico só gerencia as atribuídas a ele', () => {
+test('admin gerencia qualquer ordem, técnico só gerencia as atribuídas a ele e cliente gerencia a própria ordem', () => {
   assert.equal(canManageServiceOrder({ role: 'admin' }, { technicianId: 99 }), true);
   assert.equal(canManageServiceOrder({ role: 'tecnico', id: 7 }, { technicianId: 7 }), true);
   assert.equal(canManageServiceOrder({ role: 'tecnico', id: 7 }, { technicianId: 8 }), false);
+  assert.equal(canManageServiceOrder({ role: 'cliente', clientId: 12, id: 99 }, { clientId: 12 }), true);
+  assert.equal(canManageServiceOrder({ role: 'cliente', clientId: 12, id: 99 }, { clientId: 13 }), false);
 });
 
 test('cliente só pode escolher entre as formas de pagamento permitidas', () => {
   assert.deepStrictEqual(getAllowedPaymentMethods(), ['DINHEIRO', 'PIX', 'CARTAO', 'CREDITO', 'DEBITO', 'BOLETO']);
+});
+
+test('fluxo de pagamento usa valores padronizados para teste e integração', () => {
+  const values = getAllowedPaymentMethods();
+  assert.ok(values.includes('PIX'));
+  assert.ok(values.includes('DINHEIRO'));
+  assert.ok(values.includes('CARTAO'));
 });

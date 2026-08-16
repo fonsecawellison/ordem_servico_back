@@ -66,6 +66,17 @@ const ServiceOrder = sequelize.define('ServiceOrder', {
     allowNull: true,
   },
 
+  paymentMethod: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+
+  paymentStatus: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'PENDENTE',
+  },
+
   notes: {
     type: DataTypes.TEXT,
     allowNull: true,
