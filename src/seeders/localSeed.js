@@ -200,7 +200,7 @@ const seedLocalDatabase = async () => {
 
     await PaymentConfig.create({
       paymentMethod: 'PIX',
-      pixKey: '123456789.abcdefghij@banco.com',
+      pixKey: '71840770244',
       instructions: 'Escaneie o código QR ou copie a chave PIX acima para realizar o pagamento via PIX.',
       isActive: true,
     });
