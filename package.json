@@ -9,6 +9,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "seed:admin": "node src/seeders/seedAdmin.js",
+    "seed:local": "node src/seeders/localSeed.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

@@ -1,6 +1,22 @@
 const { validationResult } = require('express-validator');
 const Client = require('../models/Client');
+const User = require('../models/User');
+const { syncCustomerIdentity } = require('../services/clientContext');
 
+const ensureUserProfileForClient = async (client, password) => {
+  if (!client || !client.email) {
+    return null;
+  }
+
+  const { user } = await syncCustomerIdentity({
+    client,
+    ClientModel: Client,
+    UserModel: User,
+    defaultPassword: password || 'AutoFlow123',
+  });
+
+  return user;
+};
 
 //==================================================//
 //                 Criando Cliente                  //
@@ -17,7 +33,7 @@ const createClient = async (req, res) => {
     }
 
     // Recebe os dados enviados pelo frontend
-    const { name, email, phone, address } = req.body;
+    const { name, email, phone, address, password } = req.body;
 
     // Verifica se o e-mail já está cadastrado
     if (email) {
@@ -39,6 +55,8 @@ const createClient = async (req, res) => {
       phone,
       address,
     });
+
+    await ensureUserProfileForClient(client, password || 'AutoFlow123');
 
     // Retorna sucesso
     return res.status(201).json({

@@ -1,7 +1,18 @@
 
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Client = require('../models/Client');
 const { validationResult } = require('express-validator');
+const { resolveClientForUser } = require('../services/clientContext');
+
+const attachClientContext = async (user) => {
+  if (!user || user.role !== 'cliente') {
+    return user;
+  }
+
+  await resolveClientForUser(user, Client);
+  return user;
+};
 
 const register = async (req, res) => {
   try {
@@ -24,6 +35,15 @@ const register = async (req, res) => {
       role: role || 'cliente',
     });
 
+    if (user.role === 'cliente') {
+      const client = await Client.findOne({ where: { email: user.email } });
+      if (!client) {
+        await Client.create({ name: user.name, email: user.email });
+      }
+    }
+
+    const userWithClient = await attachClientContext(user);
+
     const token = jwt.sign(
       { userId: user.id },
       process.env.JWT_SECRET,
@@ -34,10 +54,11 @@ const register = async (req, res) => {
       message: 'Usuário registrado com sucesso',
       token,
       user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
+        id: userWithClient.id,
+        name: userWithClient.name,
+        email: userWithClient.email,
+        role: userWithClient.role,
+        ...(userWithClient.role === 'cliente' ? { clientId: userWithClient.clientId } : {}),
       },
     });
   } catch (error) {
@@ -68,6 +89,8 @@ const login = async (req, res) => {
       return res.status(400).json({ message: 'Credenciais inválidas' });
     }
 
+    const userWithClient = await attachClientContext(user);
+
     const token = jwt.sign(
       { userId: user.id },
       process.env.JWT_SECRET,
@@ -78,10 +101,11 @@ const login = async (req, res) => {
       message: 'Login realizado com sucesso',
       token,
       user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
+        id: userWithClient.id,
+        name: userWithClient.name,
+        email: userWithClient.email,
+        role: userWithClient.role,
+        ...(userWithClient.role === 'cliente' ? { clientId: userWithClient.clientId } : {}),
       },
     });
   } catch (error) {
@@ -91,12 +115,15 @@ const login = async (req, res) => {
 
 const getMe = async (req, res) => {
   try {
+    const user = await attachClientContext(req.user);
+
     res.json({
       user: {
-        id: req.user.id,
-        name: req.user.name,
-        email: req.user.email,
-        role: req.user.role,
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        ...(user.role === 'cliente' ? { clientId: user.clientId } : {}),
       },
     });
   } catch (error) {

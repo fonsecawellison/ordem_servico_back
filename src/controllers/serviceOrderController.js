@@ -5,6 +5,8 @@ const Client = require('../models/Client');
 const Equipment = require('../models/Equipment');
 const User = require('../models/User');
 const ServiceOrderHistory = require('../models/ServiceOrderHistory');
+const { buildServiceOrderAccessFilter, canManageServiceOrder, getAllowedStatusTransitions } = require('../services/serviceOrderAccess');
+const { resolveClientForUser } = require('../services/clientContext');
 
 //==================================================//
 //             Criando Ordem de Serviço             //
@@ -31,6 +33,14 @@ const createServiceOrder = async (req, res) => {
       estimatedCompletion,
       notes,
     } = req.body;
+
+    if (req.user?.role === 'tecnico') {
+      return res.status(403).json({ message: 'Técnicos não podem criar ordens de serviço.' });
+    }
+
+    if (req.user?.role === 'cliente') {
+      return res.status(403).json({ message: 'Clientes não podem criar ordens de serviço.' });
+    }
 
     // Verifica se o cliente existe
     const client = await Client.findByPk(clientId);
@@ -113,8 +123,14 @@ const createServiceOrder = async (req, res) => {
 
 const getServiceOrders = async (req, res) => {
   try {
+    if (req.user?.role === 'cliente') {
+      await resolveClientForUser(req.user, Client);
+    }
+
+    const accessFilter = buildServiceOrderAccessFilter(req.user || {});
 
     const serviceOrders = await ServiceOrder.findAll({
+      where: accessFilter,
       include: [
         {
           model: Client,
@@ -150,8 +166,8 @@ const getServiceOrders = async (req, res) => {
 
 const getServiceOrderById = async (req, res) => {
   try {
-
     const { id } = req.params;
+    const accessFilter = buildServiceOrderAccessFilter(req.user || {});
 
     const serviceOrder = await ServiceOrder.findByPk(id, {
       include: [
@@ -174,6 +190,16 @@ const getServiceOrderById = async (req, res) => {
       return res.status(404).json({
         message: 'Ordem de Serviço não encontrada.',
       });
+    }
+
+    const matchesAccessFilter = Object.keys(accessFilter).every((key) => {
+      if (key === 'clientId') return Number(serviceOrder.clientId) === Number(accessFilter.clientId);
+      if (key === 'technicianId') return Number(serviceOrder.technicianId) === Number(accessFilter.technicianId);
+      return true;
+    });
+
+    if (!canManageServiceOrder(req.user || {}, serviceOrder) && !matchesAccessFilter) {
+      return res.status(403).json({ message: 'Acesso negado: esta ordem não está disponível para o seu perfil.' });
     }
 
     return res.status(200).json(serviceOrder);
@@ -230,6 +256,21 @@ const updateServiceOrder = async (req, res) => {
     const previousStatus = serviceOrder.status;
     const previousTechnicianId = serviceOrder.technicianId;
     const previousNotes = serviceOrder.notes;
+
+    if (!canManageServiceOrder(req.user || {}, serviceOrder)) {
+      return res.status(403).json({ message: 'Acesso negado: você não pode alterar esta ordem de serviço.' });
+    }
+
+    if (req.user?.role === 'tecnico' && (clientId !== undefined || equipmentId !== undefined || technicianId !== undefined || reportedIssue !== undefined || diagnosis !== undefined || solution !== undefined || estimatedCompletion !== undefined || completionDate !== undefined || deliveryDate !== undefined || notes !== undefined)) {
+      return res.status(403).json({ message: 'Técnicos só podem atualizar o status da ordem de serviço.' });
+    }
+
+    if (status && req.user?.role === 'tecnico') {
+      const allowedStatuses = getAllowedStatusTransitions(req.user.role);
+      if (!allowedStatuses.includes(status)) {
+        return res.status(400).json({ message: 'Status não permitido para o perfil técnico.' });
+      }
+    }
 
     if (technicianId !== undefined) {
       if (technicianId) {
@@ -345,6 +386,10 @@ const completeServiceOrder = async (req, res) => {
       });
     }
 
+    if (!canManageServiceOrder(req.user || {}, serviceOrder)) {
+      return res.status(403).json({ message: 'Acesso negado: você não pode concluir esta ordem de serviço.' });
+    }
+
     const completionDate = new Date();
 
     await serviceOrder.update({
@@ -390,6 +435,10 @@ const deliverServiceOrder = async (req, res) => {
       return res.status(404).json({
         message: 'Ordem de Serviço não encontrada.',
       });
+    }
+
+    if (!canManageServiceOrder(req.user || {}, serviceOrder)) {
+      return res.status(403).json({ message: 'Acesso negado: você não pode entregar esta ordem de serviço.' });
     }
 
     const deliveryDate = new Date();

@@ -1,6 +1,17 @@
 
 const User = require('../models/User');
+const Client = require('../models/Client');
 const { validationResult } = require('express-validator');
+const { syncCustomerIdentity } = require('../services/clientContext');
+
+const ensureClientProfileForUser = async (user) => {
+  if (!user || user.role !== 'cliente') {
+    return null;
+  }
+
+  const { client } = await syncCustomerIdentity({ user, ClientModel: Client, UserModel: User });
+  return client;
+};
 
 const getAllUsers = async (req, res) => {
   try {
@@ -51,6 +62,10 @@ const createUser = async (req, res) => {
       role: role || 'cliente',
     });
 
+    if (user.role === 'cliente') {
+      await ensureClientProfileForUser(user);
+    }
+
     res.status(201).json({
       message: 'Usuário criado com sucesso',
       user: {
@@ -93,6 +108,10 @@ const updateUser = async (req, res) => {
       role: role || user.role,
       ...(password && { password }),
     });
+
+    if (user.role === 'cliente') {
+      await ensureClientProfileForUser(user);
+    }
 
     res.json({
       message: 'Usuário atualizado com sucesso',

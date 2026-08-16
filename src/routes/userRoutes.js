@@ -14,8 +14,8 @@ const router = express.Router();
 
 // @route   GET /api/users
 // @desc    Obter todos os usuários
-// @access  Privado (admin, tecnico)
-router.get('/', auth, authorizeRoles('admin', 'tecnico'), getAllUsers);
+// @access  Privado (admin, tecnico, cliente)
+router.get('/', auth, authorizeRoles('admin', 'tecnico', 'cliente'), getAllUsers);
 
 // @route   GET /api/users/:id
 // @desc    Obter usuário por ID

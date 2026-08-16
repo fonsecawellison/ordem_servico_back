@@ -1,6 +1,7 @@
 
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { resolveClientForUser } = require('../services/clientContext');
 
 const auth = async (req, res, next) => {
   try {
@@ -15,6 +16,10 @@ const auth = async (req, res, next) => {
 
     if (!user) {
       return res.status(401).json({ message: 'Usuário não encontrado' });
+    }
+
+    if (user.role === 'cliente') {
+      await resolveClientForUser(user);
     }
 
     req.user = user;
