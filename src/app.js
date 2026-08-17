@@ -29,6 +29,9 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Servir arquivos estáticos de uploads
+app.use('/uploads', express.static('uploads'));
+
 // Rotas
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);

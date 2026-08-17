@@ -77,6 +77,16 @@ const ServiceOrder = sequelize.define('ServiceOrder', {
     defaultValue: 'PENDENTE',
   },
 
+  paymentProofUrl: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+
+  paymentProofUploadedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+
   notes: {
     type: DataTypes.TEXT,
     allowNull: true,

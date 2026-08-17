@@ -480,6 +480,73 @@ const registerPaymentMethod = async (req, res) => {
   }
 };
 
+const registerPaymentWithProof = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { paymentMethod } = req.body;
+
+    // Validar arquivo
+    if (!req.file) {
+      return res.status(400).json({ message: 'Nenhum arquivo foi enviado. Envie o comprovante de pagamento.' });
+    }
+
+    const serviceOrder = await ServiceOrder.findByPk(id);
+
+    if (!serviceOrder) {
+      return res.status(404).json({ message: 'Ordem de Serviço não encontrada.' });
+    }
+
+    if (req.user?.role !== 'cliente') {
+      return res.status(403).json({ message: 'Apenas o cliente pode informar a forma de pagamento.' });
+    }
+
+    if (Number(serviceOrder.clientId) !== Number(req.user.clientId)) {
+      return res.status(403).json({ message: 'Você não pode alterar a forma de pagamento desta ordem.' });
+    }
+
+    if (!paymentMethod || !getAllowedPaymentMethods().includes(paymentMethod)) {
+      return res.status(400).json({
+        message: `Forma de pagamento inválida. Opções aceitas: ${getAllowedPaymentMethods().join(', ')}`,
+      });
+    }
+
+    // Construir URL relativa do arquivo
+    const proofUrl = `/uploads/payment-proofs/${req.file.filename}`;
+    const uploadedAt = new Date();
+
+    await serviceOrder.update({
+      paymentMethod,
+      paymentStatus: 'PENDENTE',
+      paymentProofUrl: proofUrl,
+      paymentProofUploadedAt: uploadedAt,
+    });
+
+    await ServiceOrderHistory.create({
+      serviceOrderId: serviceOrder.id,
+      eventType: 'FORMA_DE_PAGAMENTO_COM_COMPROVANTE',
+      description: 'Forma de pagamento selecionada com comprovante',
+      details: `Forma de pagamento: ${paymentMethod}. Comprovante enviado: ${req.file.originalname}. Aguardando validação do administrativo.`,
+      createdBy: req.user.id,
+    });
+
+    return res.status(200).json({
+      message: 'Comprovante de pagamento recebido. Aguardando validação do administrativo.',
+      serviceOrder: {
+        id: serviceOrder.id,
+        paymentMethod,
+        paymentStatus: 'PENDENTE',
+        paymentProofUrl: proofUrl,
+        paymentProofUploadedAt: uploadedAt,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Erro ao processar o comprovante de pagamento.',
+      error: error.message,
+    });
+  }
+};
+
 const confirmPaymentReceived = async (req, res) => {
   try {
     const { id } = req.params;
@@ -580,6 +647,7 @@ module.exports = {
   deleteServiceOrder,
   completeServiceOrder,
   registerPaymentMethod,
+  registerPaymentWithProof,
   confirmPaymentReceived,
   deliverServiceOrder,
 };

@@ -1,6 +1,7 @@
 const express = require('express');
 const { body } = require('express-validator');
 const { auth } = require('../middleware/auth');
+const upload = require('../middleware/uploadMiddleware');
 
 const {
   createServiceOrder,
@@ -10,6 +11,7 @@ const {
   deleteServiceOrder,
   completeServiceOrder,
   registerPaymentMethod,
+  registerPaymentWithProof,
   confirmPaymentReceived,
   deliverServiceOrder,
 } = require('../controllers/serviceOrderController');
@@ -101,6 +103,22 @@ router.put(
 //==================================================//
 
 router.patch('/:id/complete', completeServiceOrder);
+
+//==================================================//
+//       Registrando Pagamento com Comprovante      //
+//==================================================//
+
+router.post('/:id/payment-proof', 
+  upload.single('paymentProof'),
+  [
+    body('paymentMethod')
+      .notEmpty()
+      .withMessage('A forma de pagamento é obrigatória.')
+      .isIn(['DINHEIRO', 'PIX', 'CARTAO', 'CREDITO', 'DEBITO', 'BOLETO'])
+      .withMessage('Forma de pagamento inválida.'),
+  ],
+  registerPaymentWithProof
+);
 
 //==================================================//
 //          Entregando Ordem de Serviço             //
