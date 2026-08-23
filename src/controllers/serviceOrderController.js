@@ -5,12 +5,10 @@ const Client = require('../models/Client');
 const Equipment = require('../models/Equipment');
 const User = require('../models/User');
 const ServiceOrderHistory = require('../models/ServiceOrderHistory');
-const { buildServiceOrderAccessFilter, canManageServiceOrder, getAllowedStatusTransitions, getAllowedPaymentMethods } = require('../services/serviceOrderAccess');
-
-const validatePaymentMethod = (paymentMethod) => {
-  const allowed = getAllowedPaymentMethods();
-  return !paymentMethod || allowed.includes(paymentMethod);
-};
+const AdditionalServiceRequest = require('../models/AdditionalServiceRequest');
+const { buildServiceOrderAccessFilter, canManageServiceOrder, getAllowedStatusTransitions } = require('../services/serviceOrderAccess');
+const { getAllowedPaymentMethods } = require('../services/serviceOrderAccess');
+const clientPaymentMethods = ['DINHEIRO', 'PIX', 'CARTAO'];
 const { resolveClientForUser } = require('../services/clientContext');
 
 //==================================================//
@@ -149,11 +147,27 @@ const getServiceOrders = async (req, res) => {
           model: User,
           as: 'technician',
         },
+        {
+          model: AdditionalServiceRequest,
+          as: 'additionalRequests',
+        },
       ],
       order: [['id', 'ASC']],
     });
 
-    return res.status(200).json(serviceOrders);
+    return res.status(200).json(serviceOrders.map((order) => {
+      const data = order.toJSON();
+      if (req.user?.role === 'cliente' && data.paymentStatus === 'AGUARDANDO_VALIDACAO') {
+        data.notification = 'Pagamento recebido. Compareça à oficina para validar o serviço.';
+      }
+      if (req.user?.role === 'admin' && data.paymentStatus === 'COMPROVANTE_ENVIADO') {
+        data.notification = 'Novo comprovante de pagamento aguardando conferência.';
+      }
+      if (data.status === 'SERVICO_FINALIZADO') {
+        data.notification = 'Serviço finalizado. Aguardando o próximo passo da ordem.';
+      }
+      return data;
+    }));
 
   } catch (error) {
 
@@ -273,7 +287,7 @@ const updateServiceOrder = async (req, res) => {
     if (status && req.user?.role === 'tecnico') {
       const allowedStatuses = getAllowedStatusTransitions(req.user.role);
       if (!allowedStatuses.includes(status)) {
-        return res.status(400).json({ message: 'Técnicos só podem atualizar até "SERVICO_FINALIZADO". A conclusão e a entrega ficam com o departamento administrativo.' });
+        return res.status(400).json({ message: 'Status não permitido para o perfil técnico.' });
       }
     }
 
@@ -392,7 +406,11 @@ const completeServiceOrder = async (req, res) => {
     }
 
     if (req.user?.role !== 'admin') {
-      return res.status(403).json({ message: 'Apenas o departamento administrativo pode concluir a ordem de serviço.' });
+      return res.status(403).json({ message: 'Somente o administrador pode marcar a ordem como concluída.' });
+    }
+
+    if (serviceOrder.status !== 'SERVICO_FINALIZADO') {
+      return res.status(400).json({ message: 'A ordem só pode ser concluída após o serviço ser finalizado pelo técnico.' });
     }
 
     const completionDate = new Date();
@@ -400,19 +418,19 @@ const completeServiceOrder = async (req, res) => {
     await serviceOrder.update({
       status: 'CONCLUIDA',
       completionDate,
-      paymentStatus: 'PENDENTE',
+      paymentStatus: serviceOrder.paymentStatus || 'PENDENTE',
     });
 
     await ServiceOrderHistory.create({
       serviceOrderId: serviceOrder.id,
       eventType: 'ORDEM_CONCLUIDA',
       description: 'Ordem de Serviço concluída',
-      details: `A ordem foi marcada como concluída em ${completionDate.toISOString()}. Aguardando seleção da forma de pagamento pelo cliente.`,
+      details: `A ordem foi marcada como concluída em ${completionDate.toISOString()}.`,
       createdBy: 'sistema',
     });
 
     return res.status(200).json({
-      message: 'Ordem de Serviço concluída com sucesso. Agora o cliente deve escolher a forma de pagamento.',
+      message: 'Ordem de Serviço concluída com sucesso.',
       serviceOrder,
     });
 
@@ -430,164 +448,6 @@ const completeServiceOrder = async (req, res) => {
 //            Entregando Ordem de Serviço          //
 //==================================================//
 
-const registerPaymentMethod = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { paymentMethod } = req.body;
-
-    const serviceOrder = await ServiceOrder.findByPk(id);
-
-    if (!serviceOrder) {
-      return res.status(404).json({ message: 'Ordem de Serviço não encontrada.' });
-    }
-
-    if (req.user?.role !== 'cliente') {
-      return res.status(403).json({ message: 'Apenas o cliente pode informar a forma de pagamento.' });
-    }
-
-    if (Number(serviceOrder.clientId) !== Number(req.user.clientId)) {
-      return res.status(403).json({ message: 'Você não pode alterar a forma de pagamento desta ordem.' });
-    }
-
-    if (!paymentMethod || !getAllowedPaymentMethods().includes(paymentMethod)) {
-      return res.status(400).json({
-        message: `Forma de pagamento inválida. Opções aceitas: ${getAllowedPaymentMethods().join(', ')}`,
-      });
-    }
-
-    await serviceOrder.update({
-      paymentMethod,
-      paymentStatus: 'PENDENTE',
-    });
-
-    await ServiceOrderHistory.create({
-      serviceOrderId: serviceOrder.id,
-      eventType: 'FORMA_DE_PAGAMENTO_SELECIONADA',
-      description: 'Forma de pagamento selecionada pelo cliente',
-      details: `Forma de pagamento informada: ${paymentMethod}. Aguardando confirmação do pagamento pelo administrativo.`,
-      createdBy: req.user.id,
-    });
-
-    return res.status(200).json({
-      message: 'Forma de pagamento registrada com sucesso. Aguardando confirmação do administrativo.',
-      serviceOrder,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      message: 'Erro interno do servidor.',
-      error: error.message,
-    });
-  }
-};
-
-const registerPaymentWithProof = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { paymentMethod } = req.body;
-
-    // Validar arquivo
-    if (!req.file) {
-      return res.status(400).json({ message: 'Nenhum arquivo foi enviado. Envie o comprovante de pagamento.' });
-    }
-
-    const serviceOrder = await ServiceOrder.findByPk(id);
-
-    if (!serviceOrder) {
-      return res.status(404).json({ message: 'Ordem de Serviço não encontrada.' });
-    }
-
-    if (req.user?.role !== 'cliente') {
-      return res.status(403).json({ message: 'Apenas o cliente pode informar a forma de pagamento.' });
-    }
-
-    if (Number(serviceOrder.clientId) !== Number(req.user.clientId)) {
-      return res.status(403).json({ message: 'Você não pode alterar a forma de pagamento desta ordem.' });
-    }
-
-    if (!paymentMethod || !getAllowedPaymentMethods().includes(paymentMethod)) {
-      return res.status(400).json({
-        message: `Forma de pagamento inválida. Opções aceitas: ${getAllowedPaymentMethods().join(', ')}`,
-      });
-    }
-
-    // Construir URL relativa do arquivo
-    const proofUrl = `/uploads/payment-proofs/${req.file.filename}`;
-    const uploadedAt = new Date();
-
-    await serviceOrder.update({
-      paymentMethod,
-      paymentStatus: 'PENDENTE',
-      paymentProofUrl: proofUrl,
-      paymentProofUploadedAt: uploadedAt,
-    });
-
-    await ServiceOrderHistory.create({
-      serviceOrderId: serviceOrder.id,
-      eventType: 'FORMA_DE_PAGAMENTO_COM_COMPROVANTE',
-      description: 'Forma de pagamento selecionada com comprovante',
-      details: `Forma de pagamento: ${paymentMethod}. Comprovante enviado: ${req.file.originalname}. Aguardando validação do administrativo.`,
-      createdBy: req.user.id,
-    });
-
-    return res.status(200).json({
-      message: 'Comprovante de pagamento recebido. Aguardando validação do administrativo.',
-      serviceOrder: {
-        id: serviceOrder.id,
-        paymentMethod,
-        paymentStatus: 'PENDENTE',
-        paymentProofUrl: proofUrl,
-        paymentProofUploadedAt: uploadedAt,
-      },
-    });
-  } catch (error) {
-    return res.status(500).json({
-      message: 'Erro ao processar o comprovante de pagamento.',
-      error: error.message,
-    });
-  }
-};
-
-const confirmPaymentReceived = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const serviceOrder = await ServiceOrder.findByPk(id);
-
-    if (!serviceOrder) {
-      return res.status(404).json({ message: 'Ordem de Serviço não encontrada.' });
-    }
-
-    if (req.user?.role !== 'admin') {
-      return res.status(403).json({ message: 'Apenas o departamento administrativo pode confirmar o pagamento.' });
-    }
-
-    if (!serviceOrder.paymentMethod) {
-      return res.status(400).json({ message: 'O cliente ainda não informou a forma de pagamento.' });
-    }
-
-    await serviceOrder.update({
-      paymentStatus: 'CONFIRMADO',
-    });
-
-    await ServiceOrderHistory.create({
-      serviceOrderId: serviceOrder.id,
-      eventType: 'PAGAMENTO_CONFIRMADO',
-      description: 'Pagamento confirmado',
-      details: `O pagamento foi confirmado com ${serviceOrder.paymentMethod}. Aguardando a retirada do veículo pelo cliente.`,
-      createdBy: req.user.id,
-    });
-
-    return res.status(200).json({
-      message: 'Pagamento confirmado. Aguardando a retirada do veículo pelo cliente.',
-      serviceOrder,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      message: 'Erro interno do servidor.',
-      error: error.message,
-    });
-  }
-};
-
 const deliverServiceOrder = async (req, res) => {
   try {
 
@@ -602,11 +462,11 @@ const deliverServiceOrder = async (req, res) => {
     }
 
     if (req.user?.role !== 'admin') {
-      return res.status(403).json({ message: 'Apenas o departamento administrativo pode entregar a ordem de serviço.' });
+      return res.status(403).json({ message: 'Somente o administrador pode finalizar a entrega.' });
     }
 
-    if (serviceOrder.paymentStatus !== 'CONFIRMADO') {
-      return res.status(400).json({ message: 'A entrega só pode ser realizada após a confirmação do pagamento.' });
+    if (serviceOrder.status !== 'CONCLUIDA' || serviceOrder.paymentStatus !== 'CLIENTE_VALIDOU') {
+      return res.status(400).json({ message: 'A entrega exige o pagamento conferido e a validação do cliente na oficina.' });
     }
 
     const deliveryDate = new Date();
@@ -620,7 +480,7 @@ const deliverServiceOrder = async (req, res) => {
       serviceOrderId: serviceOrder.id,
       eventType: 'ORDEM_ENTREGUE',
       description: 'Ordem de Serviço entregue',
-      details: `A ordem foi marcada como entregue em ${deliveryDate.toISOString()} com pagamento ${serviceOrder.paymentMethod}.`,
+      details: `A ordem foi marcada como entregue em ${deliveryDate.toISOString()}.`,
       createdBy: 'sistema',
     });
 
@@ -639,6 +499,45 @@ const deliverServiceOrder = async (req, res) => {
   }
 };
 
+const selectPaymentMethod = async (req, res) => {
+  const serviceOrder = await ServiceOrder.findByPk(req.params.id);
+  if (!serviceOrder) return res.status(404).json({ message: 'Ordem de Serviço não encontrada.' });
+  if (req.user?.role !== 'cliente' || !canManageServiceOrder(req.user, serviceOrder)) return res.status(403).json({ message: 'Somente o cliente da ordem pode escolher o pagamento.' });
+  if (serviceOrder.status !== 'CONCLUIDA') return res.status(400).json({ message: 'O pagamento só pode ser escolhido após a conclusão da ordem.' });
+  const { paymentMethod } = req.body;
+  if (!clientPaymentMethods.includes(paymentMethod) || !getAllowedPaymentMethods().includes(paymentMethod)) return res.status(400).json({ message: 'Escolha Dinheiro, PIX ou Cartão.' });
+  await serviceOrder.update({ paymentMethod, paymentStatus: 'PAGAMENTO_SELECIONADO' });
+  return res.status(200).json({ message: 'Pagamento informado. Aguarde a conferência na oficina.', serviceOrder });
+};
+
+const uploadPaymentProof = async (req, res) => {
+  const serviceOrder = await ServiceOrder.findByPk(req.params.id);
+  if (!serviceOrder) return res.status(404).json({ message: 'Ordem de Serviço não encontrada.' });
+  if (req.user?.role !== 'cliente' || !canManageServiceOrder(req.user, serviceOrder)) return res.status(403).json({ message: 'Somente o cliente da ordem pode enviar o comprovante.' });
+  if (serviceOrder.status !== 'CONCLUIDA' || !clientPaymentMethods.includes(serviceOrder.paymentMethod)) return res.status(400).json({ message: 'Selecione uma forma de pagamento antes de enviar o comprovante.' });
+  if (!req.file) return res.status(400).json({ message: 'Selecione um comprovante em PDF, JPG ou PNG.' });
+  await serviceOrder.update({ paymentProofUrl: `/uploads/payment-proofs/${req.file.filename}`, paymentProofUploadedAt: new Date(), paymentStatus: 'COMPROVANTE_ENVIADO' });
+  return res.status(200).json({ message: 'Comprovante enviado para o administrador.', serviceOrder });
+};
+
+const confirmPaymentProof = async (req, res) => {
+  const serviceOrder = await ServiceOrder.findByPk(req.params.id);
+  if (!serviceOrder) return res.status(404).json({ message: 'Ordem de Serviço não encontrada.' });
+  if (req.user?.role !== 'admin') return res.status(403).json({ message: 'Somente o administrador pode conferir o comprovante.' });
+  if (serviceOrder.paymentStatus !== 'COMPROVANTE_ENVIADO') return res.status(400).json({ message: 'Não há comprovante aguardando conferência.' });
+  await serviceOrder.update({ paymentStatus: 'AGUARDANDO_VALIDACAO' });
+  return res.status(200).json({ message: 'Comprovante conferido. Cliente avisado para comparecer à oficina.', serviceOrder });
+};
+
+const validateServiceOrder = async (req, res) => {
+  const serviceOrder = await ServiceOrder.findByPk(req.params.id);
+  if (!serviceOrder) return res.status(404).json({ message: 'Ordem de Serviço não encontrada.' });
+  if (req.user?.role !== 'cliente' || !canManageServiceOrder(req.user, serviceOrder)) return res.status(403).json({ message: 'Somente o cliente da ordem pode validar o serviço.' });
+  if (serviceOrder.status !== 'CONCLUIDA' || serviceOrder.paymentStatus !== 'AGUARDANDO_VALIDACAO') return res.status(400).json({ message: 'A ordem ainda não está pronta para validação.' });
+  await serviceOrder.update({ paymentStatus: 'CLIENTE_VALIDOU' });
+  return res.status(200).json({ message: 'Serviço validado. Aguardando finalização pelo administrador.', serviceOrder });
+};
+
 module.exports = {
   createServiceOrder,
   getServiceOrders,
@@ -646,8 +545,9 @@ module.exports = {
   updateServiceOrder,
   deleteServiceOrder,
   completeServiceOrder,
-  registerPaymentMethod,
-  registerPaymentWithProof,
-  confirmPaymentReceived,
   deliverServiceOrder,
+  selectPaymentMethod,
+  uploadPaymentProof,
+  confirmPaymentProof,
+  validateServiceOrder,
 };

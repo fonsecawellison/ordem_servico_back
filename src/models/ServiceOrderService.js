@@ -41,6 +41,22 @@ const ServiceOrderService = sequelize.define('ServiceOrderService', {
     allowNull: false,
   },
 
+  serviceType: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'ORIGINAL',
+  },
+
+  additionalRequestId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
+
+  steps: {
+    type: DataTypes.JSON,
+    allowNull: true,
+  },
+
 }, {
   timestamps: true,
 });

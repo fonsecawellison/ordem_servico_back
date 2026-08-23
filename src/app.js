@@ -16,6 +16,7 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const financeRoutes = require('./routes/financeRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const paymentConfigRoutes = require('./routes/paymentConfigRoutes');
+const additionalServiceRoutes = require('./routes/additionalServiceRoutes');
 const ServiceOrderPart = require('./models/ServiceOrderPart');
 
 
@@ -47,6 +48,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/payment-configs', paymentConfigRoutes);
+app.use('/api/additional-services', additionalServiceRoutes);
 
 
 // Rota de teste

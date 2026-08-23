@@ -7,6 +7,8 @@ const ServiceOrder = require('../models/ServiceOrder');
 const User = require('../models/User');
 const Product = require('../models/Product');
 const StockMovement = require('../models/StockMovement');
+const ServiceCatalog = require('../models/ServiceCatalog');
+const AdditionalServiceRequest = require('../models/AdditionalServiceRequest');
 
 
 //==================================================//
@@ -120,3 +122,8 @@ StockMovement.belongsTo(Product, {
   foreignKey: 'productId',
   as: 'product',
 });
+
+ServiceOrder.hasMany(AdditionalServiceRequest, { foreignKey: 'serviceOrderId', as: 'additionalRequests' });
+AdditionalServiceRequest.belongsTo(ServiceOrder, { foreignKey: 'serviceOrderId', as: 'serviceOrder' });
+ServiceCatalog.hasMany(AdditionalServiceRequest, { foreignKey: 'serviceCatalogId', as: 'requests' });
+AdditionalServiceRequest.belongsTo(ServiceCatalog, { foreignKey: 'serviceCatalogId', as: 'catalogService' });

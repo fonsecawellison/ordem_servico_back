@@ -40,7 +40,7 @@ const getPaymentConfigByMethod = async (req, res) => {
     if (!config) {
       return res.status(200).json({
         paymentMethod: method,
-        pixKey: null,
+        pixKey: method === 'PIX' ? '71840770244' : null,
         cardOwnerName: null,
         cardNumber: null,
         cardBank: null,

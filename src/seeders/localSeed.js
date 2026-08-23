@@ -10,7 +10,6 @@ const ServiceOrder = require('../models/ServiceOrder');
 const ServiceOrderHistory = require('../models/ServiceOrderHistory');
 const ServiceOrderService = require('../models/ServiceOrderService');
 const ServiceOrderPart = require('../models/ServiceOrderPart');
-const PaymentConfig = require('../models/PaymentConfig');
 
 const seedLocalDatabase = async () => {
   try {
@@ -196,34 +195,6 @@ const seedLocalDatabase = async () => {
       unitPrice: 55.00,
       discount: 0,
       subtotal: 55.00,
-    });
-
-    await PaymentConfig.create({
-      paymentMethod: 'PIX',
-      pixKey: '71840770244',
-      instructions: 'Escaneie o código QR ou copie a chave PIX acima para realizar o pagamento via PIX.',
-      isActive: true,
-    });
-
-    await PaymentConfig.create({
-      paymentMethod: 'CARTAO',
-      cardOwnerName: 'AutoFlow Serviços',
-      cardNumber: '**** **** **** 1234',
-      cardBank: 'Banco do Brasil',
-      instructions: 'Utilize os dados do cartão acima para fazer o pagamento de débito ou crédito no seu app de banco.',
-      isActive: true,
-    });
-
-    await PaymentConfig.create({
-      paymentMethod: 'DINHEIRO',
-      instructions: 'Pagamento em dinheiro na retirada do veículo. Realize a entrega e pagamento com o responsável da oficina.',
-      isActive: true,
-    });
-
-    await PaymentConfig.create({
-      paymentMethod: 'BOLETO',
-      instructions: 'Um código de boleto será gerado e enviado por email. Acesse o seu app de banco e pague usando o código de barras.',
-      isActive: true,
     });
 
     console.log('\n=== Credenciais locais de teste ===');

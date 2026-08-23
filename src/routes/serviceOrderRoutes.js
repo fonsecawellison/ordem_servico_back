@@ -1,7 +1,6 @@
 const express = require('express');
 const { body } = require('express-validator');
 const { auth } = require('../middleware/auth');
-const upload = require('../middleware/uploadMiddleware');
 
 const {
   createServiceOrder,
@@ -10,11 +9,13 @@ const {
   updateServiceOrder,
   deleteServiceOrder,
   completeServiceOrder,
-  registerPaymentMethod,
-  registerPaymentWithProof,
-  confirmPaymentReceived,
   deliverServiceOrder,
+  selectPaymentMethod,
+  uploadPaymentProof,
+  confirmPaymentProof,
+  validateServiceOrder,
 } = require('../controllers/serviceOrderController');
+const upload = require('../middleware/uploadMiddleware');
 
 const router = express.Router();
 
@@ -105,36 +106,14 @@ router.put(
 router.patch('/:id/complete', completeServiceOrder);
 
 //==================================================//
-//       Registrando Pagamento com Comprovante      //
-//==================================================//
-
-router.post('/:id/payment-proof', 
-  upload.single('paymentProof'),
-  [
-    body('paymentMethod')
-      .notEmpty()
-      .withMessage('A forma de pagamento é obrigatória.')
-      .isIn(['DINHEIRO', 'PIX', 'CARTAO', 'CREDITO', 'DEBITO', 'BOLETO'])
-      .withMessage('Forma de pagamento inválida.'),
-  ],
-  registerPaymentWithProof
-);
-
-//==================================================//
 //          Entregando Ordem de Serviço             //
 //==================================================//
 
-router.patch('/:id/payment', [
-  body('paymentMethod')
-    .notEmpty()
-    .withMessage('A forma de pagamento é obrigatória.')
-    .isIn(['DINHEIRO', 'PIX', 'CARTAO', 'CREDITO', 'DEBITO', 'BOLETO'])
-    .withMessage('Forma de pagamento inválida.'),
-], registerPaymentMethod);
-
-router.patch('/:id/payment-confirmed', confirmPaymentReceived);
-
 router.patch('/:id/deliver', deliverServiceOrder);
+router.patch('/:id/payment', selectPaymentMethod);
+router.post('/:id/payment-proof', upload.single('proof'), uploadPaymentProof);
+router.patch('/:id/payment-proof/confirm', confirmPaymentProof);
+router.patch('/:id/validate', validateServiceOrder);
 
 //==================================================//
 //         Excluindo Ordem de Serviço               //
