@@ -23,10 +23,21 @@ const ServiceOrderPart = require('./models/ServiceOrderPart');
 const app = express();
 
 // Middlewares
-app.use(cors({
+/*app.use(cors({
   origin: process.env.FRONTEND_URL,
   credentials: true,
+})); */
+// adicionado dia 24/08 para corrigir erro de login. codigo do chatgpt
+
+app.use(cors({
+  origin: 'https://ordem-servico-lac.vercel.app',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+app.options('*', cors());
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
