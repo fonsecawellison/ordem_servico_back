@@ -1,5 +1,6 @@
 
 const express = require('express');
+const { exec } = require('child_process');
 const cors = require('cors');
 require('dotenv').config();
 const authRoutes = require('./routes/authRoutes');
@@ -50,6 +51,22 @@ async function initializeApp() {
         console.error('Seed error:', error);
       } else {
         console.log(stdout);
+      }
+    });
+  }
+}
+
+initializeApp();
+
+// Suas rotas
+app.post('/api/login', (req, res) => {
+  // seu código de login
+});
+
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
 
 
 // Servir arquivos estáticos de uploads
