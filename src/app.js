@@ -1,6 +1,6 @@
 
 const express = require('express');
-const { exec } = require('child_process');
+
 const cors = require('cors');
 require('dotenv').config();
 const authRoutes = require('./routes/authRoutes');
@@ -42,21 +42,6 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Executar seed na primeira inicialização
-async function initializeApp() {
-  if (process.env.NODE_ENV === 'production' || process.env.RUN_SEED === 'true') {
-    console.log('🌱 Running database seed...');
-    exec('npm run seed:admin', (error, stdout, stderr) => {
-      if (error) {
-        console.error('Seed error:', error);
-      } else {
-        console.log(stdout);
-      }
-    });
-  }
-}
-
-initializeApp();
 
 // Suas rotas
 app.post('/api/login', (req, res) => {
