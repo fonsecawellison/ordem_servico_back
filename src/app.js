@@ -41,6 +41,17 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Executar seed na primeira inicialização
+async function initializeApp() {
+  if (process.env.NODE_ENV === 'production' || process.env.RUN_SEED === 'true') {
+    console.log('🌱 Running database seed...');
+    exec('npm run seed:admin', (error, stdout, stderr) => {
+      if (error) {
+        console.error('Seed error:', error);
+      } else {
+        console.log(stdout);
+
+
 // Servir arquivos estáticos de uploads
 app.use('/uploads', express.static('uploads'));
 
